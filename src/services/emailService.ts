@@ -13,11 +13,28 @@ const EMAIL_CONFIG = {
   templateId: import.meta.env.VITE_EMAILJS_TEMPLATE_ID
 };
 
+/**
+ * Fixed chunk size for splitting requests into batches
+ * Matches CEB duty station app behavior: 15 requests per email
+ */
+const CHUNK_SIZE = 15;
+
+/**
+ * Delay between email sends (in milliseconds)
+ * Matches CEB duty station app: 2 second delay between batches to prevent rate limiting
+ */
+const EMAIL_SEND_DELAY = 2000;
+
 export interface EmailSubmissionResult {
   success: boolean;
   submissionId?: string;
   error?: string;
   details?: any;
+  // Batch information for multi-batch submissions
+  totalBatches?: number;
+  successfulBatches?: number;
+  failedBatches?: number;
+  batchErrors?: string[];
 }
 
 /**
@@ -53,6 +70,7 @@ export class EmailService {
 
   /**
    * Submit mixed request submission via email
+   * Automatically splits into chunks of 15 requests per email if needed
    */
   async submitRequests(submission: RequestSubmission): Promise<EmailSubmissionResult> {
     if (!this.initialized) {
@@ -60,28 +78,15 @@ export class EmailService {
     }
 
     try {
-      // Group requests by action type for better email organization
-      const groupedRequests = {
-        new: submission.requests.filter(r => r.action === 'new'),
-        update: submission.requests.filter(r => r.action === 'update'),
-        remove: submission.requests.filter(r => r.action === 'remove')
-      };
-
-      // Prepare email content
-      const emailContent = this.formatEmailContent(submission, groupedRequests);
-
-      // Send email via EmailJS
-      const response = await emailjs.send(
-        EMAIL_CONFIG.serviceId,
-        EMAIL_CONFIG.templateId,
-        emailContent
-      );
-
-      return {
-        success: true,
-        submissionId: submission.submissionId,
-        details: response
-      };
+      // Check if chunking is needed
+      if (submission.requests.length <= CHUNK_SIZE) {
+        // Single batch - send as normal
+        return await this.sendSingleBatch(submission, submission.requests, 1, 1);
+      } else {
+        // Multiple batches needed - split and send sequentially
+        const chunks = this.splitIntoChunks(submission.requests);
+        return await this.sendMultipleBatches(submission, chunks);
+      }
 
     } catch (error) {
       console.error('Failed to send email:', error);
@@ -112,16 +117,156 @@ export class EmailService {
   }
 
   /**
+   * Split requests into chunks of fixed size
+   * Matches CEB duty station app pattern: 15 requests per batch
+   */
+  private splitIntoChunks(requests: DonorRequest[]): DonorRequest[][] {
+    if (requests.length === 0) return [];
+    
+    const chunks: DonorRequest[][] = [];
+    
+    for (let i = 0; i < requests.length; i += CHUNK_SIZE) {
+      chunks.push(requests.slice(i, i + CHUNK_SIZE));
+    }
+    
+    return chunks;
+  }
+
+  /**
+   * Send a single batch of requests
+   */
+  private async sendSingleBatch(
+    submission: RequestSubmission,
+    requests: DonorRequest[],
+    batchNumber: number,
+    totalBatches: number
+  ): Promise<EmailSubmissionResult> {
+    try {
+      // Group requests by action type for better email organization
+      const groupedRequests = {
+        new: requests.filter(r => r.action === 'new'),
+        update: requests.filter(r => r.action === 'update'),
+        remove: requests.filter(r => r.action === 'remove')
+      };
+
+      // Prepare email content with batch information
+      const emailContent = this.formatEmailContent(
+        submission, 
+        groupedRequests,
+        batchNumber,
+        totalBatches
+      );
+
+      // Send email via EmailJS
+      const response = await emailjs.send(
+        EMAIL_CONFIG.serviceId,
+        EMAIL_CONFIG.templateId,
+        emailContent
+      );
+
+      return {
+        success: true,
+        submissionId: submission.submissionId,
+        details: response,
+        totalBatches: totalBatches,
+        successfulBatches: 1,
+        failedBatches: 0
+      };
+
+    } catch (error) {
+      console.error(`Failed to send batch ${batchNumber}/${totalBatches}:`, error);
+      
+      let errorMessage = 'Unknown email error';
+      if (error && typeof error === 'object' && 'text' in error) {
+        errorMessage = String(error.text);
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      
+      return {
+        success: false,
+        error: `Batch ${batchNumber}/${totalBatches} failed: ${errorMessage}`,
+        details: error,
+        totalBatches: totalBatches,
+        successfulBatches: 0,
+        failedBatches: 1,
+        batchErrors: [errorMessage]
+      };
+    }
+  }
+
+  /**
+   * Send multiple batches sequentially with delays
+   * Matches CEB duty station app pattern: 2 second delay between batches
+   */
+  private async sendMultipleBatches(
+    submission: RequestSubmission,
+    chunks: DonorRequest[][]
+  ): Promise<EmailSubmissionResult> {
+    const totalBatches = chunks.length;
+    const batchErrors: string[] = [];
+    let successfulBatches = 0;
+    let failedBatches = 0;
+
+    console.log(`[EmailJS] Sending ${submission.requests.length} requests in ${totalBatches} batch(es) (${CHUNK_SIZE} requests per batch)`);
+
+    for (let i = 0; i < chunks.length; i++) {
+      const batch = chunks[i];
+      const batchNumber = i + 1;
+      
+      console.log(`[EmailJS] Sending batch ${batchNumber}/${totalBatches} (${batch.length} requests)`);
+      
+      const result = await this.sendSingleBatch(submission, batch, batchNumber, totalBatches);
+      
+      if (result.success) {
+        successfulBatches++;
+      } else {
+        failedBatches++;
+        if (result.error) {
+          batchErrors.push(result.error);
+        }
+      }
+
+      // Delay between batches (2 seconds) to prevent rate limiting
+      // Skip delay after the last batch
+      if (i < chunks.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, EMAIL_SEND_DELAY));
+      }
+    }
+
+    // Return overall result
+    const allSuccessful = failedBatches === 0;
+    
+    return {
+      success: allSuccessful,
+      submissionId: submission.submissionId,
+      error: allSuccessful 
+        ? undefined 
+        : `${failedBatches} of ${totalBatches} batch(es) failed to send`,
+      totalBatches,
+      successfulBatches,
+      failedBatches,
+      batchErrors: batchErrors.length > 0 ? batchErrors : undefined
+    };
+  }
+
+  /**
    * Format email content to match the new template structure
+   * Includes batch information for multi-batch submissions
    */
   private formatEmailContent(
     submission: RequestSubmission, 
-    groupedRequests: { new: DonorRequest[]; update: DonorRequest[]; remove: DonorRequest[] }
+    groupedRequests: { new: DonorRequest[]; update: DonorRequest[]; remove: DonorRequest[] },
+    batchNumber: number = 1,
+    totalBatches: number = 1
   ): Record<string, any> {
     const { new: newRequests, update: updateRequests, remove: removeRequests } = groupedRequests;
     
+    // Get the requests for this batch (use all requests in groupedRequests)
+    const batchRequests = [...newRequests, ...updateRequests, ...removeRequests];
+    
     // Format requests for human-readable table
-    const requestsTable = this.formatRequestsTable(submission.requests);
+    const requestsTable = this.formatRequestsTable(batchRequests, batchNumber, totalBatches);
     
     // Format JSON snippets for new requests (for database addition)
     const jsonSnippets = this.formatJsonSnippets(newRequests);
@@ -142,9 +287,21 @@ export class EmailService {
 
   /**
    * Format requests as a human-readable table
+   * Includes batch information for multi-batch submissions
    */
-  private formatRequestsTable(requests: DonorRequest[]): string {
+  private formatRequestsTable(
+    requests: DonorRequest[], 
+    batchNumber: number = 1, 
+    totalBatches: number = 1
+  ): string {
     const lines = [];
+    
+    // Add batch header if multiple batches
+    if (totalBatches > 1) {
+      lines.push(`BATCH ${batchNumber} OF ${totalBatches}`);
+      lines.push(`(${requests.length} requests in this batch)`);
+      lines.push('');
+    }
     
     lines.push('REQUEST DETAILS:');
     lines.push('================');
