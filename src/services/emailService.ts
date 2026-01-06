@@ -48,15 +48,6 @@ export class EmailService {
    */
   async initialize(): Promise<void> {
     try {
-
-      // DEBUG: Log what credentials are being loaded
-      console.log('🔍 EmailJS Configuration Debug:', {
-        publicKey: EMAIL_CONFIG.publicKey ? `${EMAIL_CONFIG.publicKey.substring(0, 8)}...` : '❌ MISSING',
-        serviceId: EMAIL_CONFIG.serviceId || '❌ MISSING',
-        templateId: EMAIL_CONFIG.templateId || '❌ MISSING',
-        privateKey: EMAIL_CONFIG.privateKey ? '✅ SET' : '⚠️ NOT SET'
-      });
-
       // Validate environment variables are loaded
       if (!EMAIL_CONFIG.publicKey || !EMAIL_CONFIG.serviceId || !EMAIL_CONFIG.templateId) {
         const missing = [];
@@ -69,7 +60,6 @@ export class EmailService {
 
       emailjs.init(EMAIL_CONFIG.publicKey);
       this.initialized = true;
-      console.log('✅ EmailJS initialized successfully');
     } catch (error) {
       console.error('Failed to initialize EmailJS:', error);
       throw new Error(`Email service initialization failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -216,13 +206,9 @@ export class EmailService {
     let successfulBatches = 0;
     let failedBatches = 0;
 
-    console.log(`[EmailJS] Sending ${submission.requests.length} requests in ${totalBatches} batch(es) (${CHUNK_SIZE} requests per batch)`);
-
     for (let i = 0; i < chunks.length; i++) {
       const batch = chunks[i];
       const batchNumber = i + 1;
-      
-      console.log(`[EmailJS] Sending batch ${batchNumber}/${totalBatches} (${batch.length} requests)`);
       
       const result = await this.sendSingleBatch(submission, batch, batchNumber, totalBatches);
       
