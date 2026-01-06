@@ -268,8 +268,8 @@ export class EmailService {
     // Format requests for human-readable table
     const requestsTable = this.formatRequestsTable(batchRequests, batchNumber, totalBatches);
     
-    // Format JSON snippets for new requests (for database addition)
-    const jsonSnippets = this.formatJsonSnippets(newRequests);
+    // Format CSV lines for new requests (for database addition)
+    const csvSnippets = this.formatCsvSnippets(newRequests);
 
     // Template variables matching your EmailJS template
     return {
@@ -280,8 +280,8 @@ export class EmailService {
       // Template variable: {{{requests}}} - human readable table
       requests: requestsTable,
       
-      // Template variable: {{{json_snippet}}} - JSON for database
-      json_snippet: jsonSnippets
+      // Template variable: {{{json_snippet}}} - CSV for database (kept same variable name for template compatibility)
+      json_snippet: csvSnippets
     };
   }
 
@@ -336,29 +336,35 @@ export class EmailService {
   }
 
   /**
-   * Format JSON snippets for new requests (for database addition)
+   * Format CSV lines for new requests (for database addition)
+   * Matches the DONORS.csv structure: NAME,TYPE,CEB CODE,CONTRIBUTOR TYPE
    */
-  private formatJsonSnippets(newRequests: DonorRequest[]): string {
+  private formatCsvSnippets(newRequests: DonorRequest[]): string {
     if (newRequests.length === 0) {
-      return 'No new requests requiring JSON database entries.';
+      return 'No new requests requiring CSV database entries.';
     }
 
     const lines = [];
-    lines.push('JSON DATABASE ENTRIES FOR NEW REQUESTS:');
+    lines.push('CSV DATABASE ENTRIES FOR NEW REQUESTS:');
     lines.push('=======================================');
+    lines.push('Copy and paste the lines below into DONORS.csv');
+    lines.push('');
+    lines.push('CSV Format: NAME,TYPE,CEB CODE,CONTRIBUTOR TYPE');
     lines.push('');
 
     newRequests.forEach((req, index) => {
-      const jsonObject = {
-        "NAME": req.entityName,
-        "TYPE": this.getTypeFromContributorType(req.contributorType),
-        "CEB CODE": req.customCode || req.suggestedCode,
-        "CONTRIBUTOR TYPE": req.contributorType
-      };
-
-      lines.push(`${index + 1}. ${req.entityName}:`);
-      lines.push(JSON.stringify(jsonObject, null, 2));
-      lines.push('');
+      // Format: NAME,TYPE,CEB CODE,CONTRIBUTOR TYPE
+      const name = req.entityName;
+      const type = this.getTypeFromContributorType(req.contributorType);
+      const code = req.customCode || req.suggestedCode;
+      const contributorType = req.contributorType;
+      
+      // Escape commas in name field if present (wrap in quotes)
+      const escapedName = name.includes(',') ? `"${name}"` : name;
+      
+      const csvLine = `${escapedName},${type},${code},${contributorType}`;
+      
+      lines.push(`${index + 1}. ${csvLine}`);
     });
 
     return lines.join('\n');
