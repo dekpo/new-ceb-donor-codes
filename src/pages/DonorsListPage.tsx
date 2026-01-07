@@ -117,13 +117,13 @@ const DonorsListPage: React.FC = () => {
   }, [query, useAdvancedSearch]);
 
   const getTypeDisplayName = (donor: DonorWithType) => {
-    // Display the basic TYPE field like the original app: Government vs Non-government
-    return donor.TYPE === '1' ? 'Government' : 'Non-government';
+    // Display the contributor type name (e.g., "Government", "NGOs", "Private Sector")
+    return donor.contributorTypeInfo?.NAME || 'Unknown';
   };
 
   const getTypeColor = (donor: DonorWithType) => {
-    if (donor.TYPE === '1') return 'primary';
-    return 'secondary';
+    // Color based on contributor type - can be enhanced later
+    return 'default';
   };
 
   if (loading) {
@@ -363,15 +363,7 @@ const DonorsListPage: React.FC = () => {
                         label={getTypeDisplayName(donor)}
                         color={getTypeColor(donor)}
                         size="small"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Chip 
-                        label={donor.contributorTypeInfo?.NAME || 'Unknown'}
-                        color="default"
-                        size="small"
-                        variant="outlined"
-                        title={`${donor['CONTRIBUTOR TYPE'] || 'Unknown'}: ${donor.contributorTypeInfo?.DEFINITION || 'No definition available'}`}
+                        title={donor.contributorTypeInfo?.DEFINITION || 'No definition available'}
                         sx={{ 
                           maxWidth: '200px',
                           '& .MuiChip-label': {
@@ -379,6 +371,19 @@ const DonorsListPage: React.FC = () => {
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap'
                           }
+                        }}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Chip 
+                        label={donor['CONTRIBUTOR TYPE'] || 'Unknown'}
+                        color="primary"
+                        size="small"
+                        variant="outlined"
+                        title={`${donor['CONTRIBUTOR TYPE']}: ${donor.contributorTypeInfo?.NAME || 'Unknown'}`}
+                        sx={{ 
+                          fontFamily: 'monospace',
+                          fontWeight: 'bold'
                         }}
                       />
                     </TableCell>

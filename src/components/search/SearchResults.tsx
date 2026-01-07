@@ -56,11 +56,13 @@ const SearchResults: React.FC<SearchResultsProps> = ({
     : results;
 
   const getTypeDisplayName = (donor: DonorWithType) => {
-    return donor.TYPE === '1' ? 'Government' : 'Non-government';
+    // Display the contributor type name (e.g., "Government", "NGOs", "Private Sector")
+    return donor.contributorTypeInfo?.NAME || 'Unknown';
   };
 
   const getTypeColor = (donor: DonorWithType) => {
-    return donor.TYPE === '1' ? 'primary' : 'secondary';
+    // Color based on contributor type - can be enhanced later
+    return 'default';
   };
 
   const renderHighlightedText = (text: string, highlighted?: string) => {
@@ -180,15 +182,7 @@ const SearchResults: React.FC<SearchResultsProps> = ({
                       label={getTypeDisplayName(donor)}
                       color={getTypeColor(donor)}
                       size="small"
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Chip 
-                      label={donor.contributorTypeInfo?.NAME || 'Unknown'}
-                      color="default"
-                      size="small"
-                      variant="outlined"
-                      title={`${donor['CONTRIBUTOR TYPE']}: ${donor.contributorTypeInfo?.DEFINITION || 'No definition available'}`}
+                      title={donor.contributorTypeInfo?.DEFINITION || 'No definition available'}
                       sx={{ 
                         maxWidth: '200px',
                         '& .MuiChip-label': {
@@ -196,6 +190,19 @@ const SearchResults: React.FC<SearchResultsProps> = ({
                           textOverflow: 'ellipsis',
                           whiteSpace: 'nowrap'
                         }
+                      }}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Chip 
+                      label={donor['CONTRIBUTOR TYPE'] || 'Unknown'}
+                      color="primary"
+                      size="small"
+                      variant="outlined"
+                      title={`${donor['CONTRIBUTOR TYPE']}: ${donor.contributorTypeInfo?.NAME || 'Unknown'}`}
+                      sx={{ 
+                        fontFamily: 'monospace',
+                        fontWeight: 'bold'
                       }}
                     />
                   </TableCell>

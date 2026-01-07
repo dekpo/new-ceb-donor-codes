@@ -275,7 +275,10 @@ export class EmailService {
       requests: requestsTable,
       
       // Template variable: {{{json_snippet}}} - CSV for database (kept same variable name for template compatibility)
-      json_snippet: csvSnippets
+      json_snippet: csvSnippets,
+      
+      // Template variable: {{additional_information}} - global notes for entire submission
+      additional_information: submission.notes || 'N/A'
     };
   }
 
